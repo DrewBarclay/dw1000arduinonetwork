@@ -11,12 +11,6 @@ public:
   byte id;
   DW1000Time timestamps[6]; //in chronological order
   
-  Device() {
-    for (int i = 0; i < 6; i++) {
-      timestamps[i] = DW1000Time((int64_t)1); //prevent division by zero
-    } 
-  }
-  
   float computeRange() {    
     // asymmetric two-way ranging (more computationly intense, less error prone)
     DW1000Time round1 = (timestamps[3] - timestamps[0]).wrap();
@@ -95,15 +89,26 @@ void setup() {
     // attach callback for (successfully) sent and received messages
     DW1000.attachSentHandler(handleSent);
     DW1000.attachReceivedHandler(handleReceived);
+    DW1000.attachErrorHandler(handleError);
+    DW1000.attachReceiveFailedHandler(handleReceiveFailed);
     
     receiver(); //start receiving
     
-    DW1000Time initTime = DW1000.getSystemTimestamp();
+    DW1000Time initTime;
+    DW1000.getSystemTimestamp(initTime);
     for (int i = 0; i < NUM_DEVICES; i++) {
       for (int j = 0; j < 6; j++) { 
-        devices[i].timestamps[j] = initTime;
+        devices[i].timestamps[j] = initTime + DW1000Time((int64_t)j * 1000);
       }
     }
+}
+
+void handleError() {
+  Serial.println("Error!"); 
+}
+
+void handleReceiveFailed() {
+  Serial.println("Receive failed!"); 
 }
 
 void handleSent() {
@@ -203,8 +208,8 @@ void loop() {
       curByte++;
       devices[i].timestamps[5].getTimestamp(data + curByte); //last timestamp will contain the time we last received a transmission
       curByte += 5;
-      float range = devices[i].computeRange();
-      memcpy(data + curByte, &range, 4); //floats are 4 bytes
+      //float range = devices[i].computeRange();
+      //memcpy(data + curByte, &range, 4); //floats are 4 bytes
       curByte += 4;
       
       //Bookkeeping: move down the timestamps, append the time we sent this message to the last place
