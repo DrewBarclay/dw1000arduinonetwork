@@ -4,7 +4,7 @@
 #include <DW1000.h>
 
 //number of devices that can form a network at once
-#define NUM_DEVICES 7
+#define NUM_DEVICES 3
 
 class Device  {
 public:
@@ -60,7 +60,7 @@ DW1000Time timeDeviceSent;
 // reply times (same on both sides for symm. ranging)
 unsigned int replyDelayTimeUS = 3000;
 
-bool received;
+volatile bool received;
 
 int findDeviceIndex(int id) {
   for (int i = 0; i < curNumDevices; i++) {
@@ -73,7 +73,7 @@ int findDeviceIndex(int id) {
 
 void setup() {
     received = false;
-    ourID = 2; //change per device    
+    ourID = 1; //change per device    
     curNumDevices = 0;
     lastTransmission = millis();
 
@@ -97,6 +97,13 @@ void setup() {
     DW1000.attachReceivedHandler(handleReceived);
     
     receiver(); //start receiving
+    
+    DW1000Time initTime = DW1000.getSystemTimestamp();
+    for (int i = 0; i < NUM_DEVICES; i++) {
+      for (int j = 0; j < 6; j++) { 
+        devices[i].timestamps[j] = initTime;
+      }
+    }
 }
 
 void handleSent() {
@@ -147,7 +154,7 @@ void loop() {
     } 
     
     //Now, a list of device-specific stuff
-    /*for (int i = 6; i < len;) {
+    for (int i = 6; i < len;) {
       //First byte, device ID
       byte deviceID = data[i];
       i++; 
@@ -170,11 +177,13 @@ void loop() {
         devices[idx].timestamps[4] = timeDeviceSent;
         devices[idx].timestamps[5] = timeReceived; 
         Serial.print("New range! ID: "); Serial.print(devices[idx].id); Serial.print(" Range: "); Serial.println(devices[idx].computeRange());
+        Serial.print("Reported range addition as part of packet: "); Serial.print(range);
       } else {
         //devices[idx].updateRangeForID(deviceID, range);
         //todo send this over serial to cellphone
       }
-    }*/
+    }
+   
   }
   
   if (curMillis - lastTransmission > 300) {
