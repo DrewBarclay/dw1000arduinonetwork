@@ -54,6 +54,8 @@ DW1000Time timeDeviceSent;
 // reply times (same on both sides for symm. ranging)
 unsigned int replyDelayTimeUS = 3000;
 
+bool received;
+
 int findDeviceIndex(int id) {
   for (int i = 0; i < curNumDevices; i++) {
      if (devices[i].id == id) {
@@ -64,7 +66,8 @@ int findDeviceIndex(int id) {
 }
 
 void setup() {
-    ourID = 1; //change per device    
+    received = false;
+    ourID = 2; //change per device    
     curNumDevices = 0;
     lastTransmission = millis();
 
@@ -77,7 +80,7 @@ void setup() {
     // general configuration
     DW1000.newConfiguration();
     DW1000.setDefaults();
-    DW1000.setDeviceAddress(1);
+    DW1000.setDeviceAddress(2);
     DW1000.setNetworkId(10);
     DW1000.enableMode(DW1000.MODE_LONGDATA_RANGE_ACCURACY);
     DW1000.commitConfiguration();
@@ -95,60 +98,7 @@ void handleSent() {
 }
 
 void handleReceived() {
-  Serial.println("Rec");
-  len = DW1000.getDataLength();
-  DW1000.getData(data, len);
-  DW1000.getReceiveTimestamp(timeReceived);
-  
-  if (len < 6) {
-     Serial.println("Received message with length <6, error."); 
-     return;
-  }
-  
-  //Parse data
-  //First byte, ID
-  byte fromID = data[0];
-  //Second byte, 5 byte timestamp when the transmission was sent (their clock)
-  timeDeviceSent.setTimestamp(data + 1);
-  
-  //If this device is not in our list, add it now.
-  int idx = findDeviceIndex(fromID);
-  if (idx == -1) {
-    devices[curNumDevices].id = fromID;
-    devices[curNumDevices].timestamps[5] = timeDeviceSent;
-    idx = curNumDevices;
-    curNumDevices++;
-  } 
-  
-  //Now, a list of device-specific stuff
-  for (int i = 6; i < len;) {
-    //First byte, device ID
-    byte deviceID = data[i];
-    i++; 
-    
-    //Next five bytes are the timestamp of when the device received our last transmit
-    DW1000Time timeDeviceReceived(data + i);
-    i += 5; 
-    
-    //Next four bytes are a float representing the last calculated range
-    float range;
-    memcpy(&range, data + i, 4);
-    i+= 4;
-    
-    //Is this our device? If so, we have an update to do and a range to report!
-    if (deviceID == ourID) {
-      //Mark down the two timestamps it included, as well as the time we received it
-      //Move everything down by three places
-      memmove(devices[idx].timestamps, devices[idx].timestamps + 3, sizeof(DW1000Time) * 3);
-      devices[idx].timestamps[3] = timeDeviceReceived;
-      devices[idx].timestamps[4] = timeDeviceSent;
-      devices[idx].timestamps[5] = timeReceived; 
-      Serial.print("New range! ID: "); Serial.print(devices[idx].id); Serial.print(" Range: "); Serial.println(devices[idx].computeRange());
-    } else {
-      //devices[idx].updateRangeForID(deviceID, range);
-      //todo send this over serial to cellphone
-    }
-  }
+  received = true;
 }
 
 void receiver() {
@@ -161,6 +111,65 @@ void receiver() {
 
 void loop() {
   long curMillis = millis();
+  
+  if (received) {
+    received = false;
+    len = DW1000.getDataLength();
+    Serial.println("Rec"); Serial.println(len);
+    DW1000.getData(data, len);
+    DW1000.getReceiveTimestamp(timeReceived);
+    
+    if (len < 6) {
+       Serial.println("Received message with length <6, error."); 
+       return;
+    }
+    
+    //Parse data
+    //First byte, ID
+    byte fromID = data[0];
+    //Second byte, 5 byte timestamp when the transmission was sent (their clock)
+    timeDeviceSent.setTimestamp(data + 1);
+    
+    //If this device is not in our list, add it now.
+    int idx = findDeviceIndex(fromID);
+    if (idx == -1) {
+      devices[curNumDevices].id = fromID;
+      devices[curNumDevices].timestamps[5] = timeDeviceSent;
+      idx = curNumDevices;
+      curNumDevices++;
+    } 
+    
+    //Now, a list of device-specific stuff
+    for (int i = 6; i < len;) {
+      //First byte, device ID
+      byte deviceID = data[i];
+      i++; 
+      
+      //Next five bytes are the timestamp of when the device received our last transmit
+      DW1000Time timeDeviceReceived(data + i);
+      i += 5; 
+      
+      //Next four bytes are a float representing the last calculated range
+      float range;
+      memcpy(&range, data + i, 4);
+      i+= 4;
+      
+      //Is this our device? If so, we have an update to do and a range to report!
+      if (deviceID == ourID) {
+        //Mark down the two timestamps it included, as well as the time we received it
+        //Move everything down by three places
+        memmove(devices[idx].timestamps, devices[idx].timestamps + 3, sizeof(DW1000Time) * 3);
+        devices[idx].timestamps[3] = timeDeviceReceived;
+        devices[idx].timestamps[4] = timeDeviceSent;
+        devices[idx].timestamps[5] = timeReceived; 
+        Serial.print("New range! ID: "); Serial.print(devices[idx].id); Serial.print(" Range: "); Serial.println(devices[idx].computeRange());
+      } else {
+        //devices[idx].updateRangeForID(deviceID, range);
+        //todo send this over serial to cellphone
+      }
+    }
+  }
+  
   if (curMillis - lastTransmission > 300) {
     //Transmit every 30 ms 
     DW1000.newTransmit();
