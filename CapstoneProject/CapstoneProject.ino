@@ -79,7 +79,7 @@ void setup() {
     DW1000.setDefaults();
     DW1000.setDeviceAddress(1);
     DW1000.setNetworkId(10);
-    DW1000.enableMode(DW1000.MODE_LONGDATA_RANGE_LOWPOWER);
+    DW1000.enableMode(DW1000.MODE_LONGDATA_RANGE_ACCURACY);
     DW1000.commitConfiguration();
     Serial.println(F("Committed configuration ..."));
 
@@ -95,6 +95,7 @@ void handleSent() {
 }
 
 void handleReceived() {
+  Serial.println("Rec");
   len = DW1000.getDataLength();
   DW1000.getData(data, len);
   DW1000.getReceiveTimestamp(timeReceived);
@@ -160,7 +161,7 @@ void receiver() {
 
 void loop() {
   long curMillis = millis();
-  if (curMillis - lastTransmission > 30) {
+  if (curMillis - lastTransmission > 300) {
     //Transmit every 30 ms 
     DW1000.newTransmit();
     DW1000.setDefaults();
