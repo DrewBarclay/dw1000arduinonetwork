@@ -11,6 +11,12 @@ public:
   byte id;
   DW1000Time timestamps[6]; //in chronological order
   
+  Device() {
+    for (int i = 0; i < 6; i++) {
+      timestamps[i] = DW1000Time((int64_t)1); //prevent division by zero
+    } 
+  }
+  
   float computeRange() {    
     // asymmetric two-way ranging (more computationly intense, less error prone)
     DW1000Time round1 = (timestamps[3] - timestamps[0]).wrap();
@@ -99,6 +105,7 @@ void handleSent() {
 
 void handleReceived() {
   received = true;
+  Serial.println("Received, set.");
 }
 
 void receiver() {
@@ -110,7 +117,7 @@ void receiver() {
 }
 
 void loop() {
-  long curMillis = millis();
+  unsigned long curMillis = millis();
   
   if (received) {
     received = false;
@@ -140,7 +147,7 @@ void loop() {
     } 
     
     //Now, a list of device-specific stuff
-    for (int i = 6; i < len;) {
+    /*for (int i = 6; i < len;) {
       //First byte, device ID
       byte deviceID = data[i];
       i++; 
@@ -167,7 +174,7 @@ void loop() {
         //devices[idx].updateRangeForID(deviceID, range);
         //todo send this over serial to cellphone
       }
-    }
+    }*/
   }
   
   if (curMillis - lastTransmission > 300) {
