@@ -10,8 +10,12 @@ class Device  {
 public:
   byte id;
   DW1000Time timestamps[6]; //in chronological order
+  float lastComputedRange;
   
-  float computeRange() {    
+  Device() : lastComputedRange(0.0f) {}
+  
+  void computeRange() {    
+    // only call this when timestamps are correct
     // asymmetric two-way ranging (more computationly intense, less error prone)
     DW1000Time round1 = (timestamps[3] - timestamps[0]).wrap();
     DW1000Time reply1 = (timestamps[2] - timestamps[1]).wrap();
@@ -19,7 +23,11 @@ public:
     DW1000Time reply2 = (timestamps[4] - timestamps[3]).wrap();
     DW1000Time tof = (round1 * round2 - reply1 * reply2) / (round1 + round2 + reply1 + reply2);
     // set tof timestamp
-    return tof.getAsMeters();
+    this->lastComputedRange = tof.getAsMeters();
+  }
+  
+  float getLastComputedRange() {
+    return this->lastComputedRange;
   }
 };
 
@@ -67,7 +75,7 @@ int findDeviceIndex(int id) {
 
 void setup() {
     received = false;
-    ourID = 1; //change per device    
+    ourID = 3; //change per device    
     curNumDevices = 0;
     lastTransmission = millis();
 
@@ -181,11 +189,10 @@ void loop() {
         devices[idx].timestamps[3] = timeDeviceReceived;
         devices[idx].timestamps[4] = timeDeviceSent;
         devices[idx].timestamps[5] = timeReceived; 
-        Serial.print("New range! ID: "); Serial.print(devices[idx].id); Serial.print(" Range: "); Serial.println(devices[idx].computeRange());
-        Serial.print("Reported range addition as part of packet: "); Serial.print(range);
+        devices[idx].computeRange();
+        Serial.print("New range from this tag to "); Serial.print(devices[idx].id); Serial.print(". Meters: "); Serial.println(devices[idx].getLastComputedRange());
       } else {
-        //devices[idx].updateRangeForID(deviceID, range);
-        //todo send this over serial to cellphone
+        Serial.print("Reported range from "); Serial.print(fromID); Serial.print("<->"); Serial.print(deviceID); Serial.println(", meters: "); Serial.println(range);
       }
     }
    
@@ -208,8 +215,8 @@ void loop() {
       curByte++;
       devices[i].timestamps[5].getTimestamp(data + curByte); //last timestamp will contain the time we last received a transmission
       curByte += 5;
-      //float range = devices[i].computeRange();
-      //memcpy(data + curByte, &range, 4); //floats are 4 bytes
+      float range = devices[i].getLastComputedRange();
+      memcpy(data + curByte, &range, 4); //floats are 4 bytes
       curByte += 4;
       
       //Bookkeeping: move down the timestamps, append the time we sent this message to the last place
