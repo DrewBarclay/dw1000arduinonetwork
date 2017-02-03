@@ -9,6 +9,7 @@
 class Device  {
 public:
   byte id;
+  byte transmissionCount;
   DW1000Time timeDevicePrevSent;
   DW1000Time timePrevReceived;
   DW1000Time timeSent;
@@ -16,19 +17,22 @@ public:
   DW1000Time timeDeviceSent;
   DW1000Time timeReceived;
   float lastComputedRange;
+  byte hasReplied;
   
   Device() : lastComputedRange(0.0f) {}
   
   void computeRange() {    
-    // only call this when timestamps are correct
+    // only call this when timestamps are correct, otherwise strangeness may result
     // asymmetric two-way ranging (more computationly intense, less error prone)
     DW1000Time round1 = (timeDeviceReceived - timeDevicePrevSent).wrap();
     DW1000Time reply1 = (timeSent - timePrevReceived).wrap();
     DW1000Time round2 = (timeReceived - timeSent).wrap();
     DW1000Time reply2 = (timeDeviceSent - timeDeviceReceived).wrap();
-    DW1000Time tof = (round1 * round2 - reply1 * reply2) / (round1 + round2 + reply1 + reply2);
-    // set tof timestamp
-    this->lastComputedRange = tof.getAsMeters();
+    
+    if (round1.getTimestamp() > reply1.getTimestamp() && round2.getTimestamp() > reply2.getTimestamp()) { //Sanity check to ensure we're not doing incorrect math
+      DW1000Time tof = (round1 * round2 - reply1 * reply2) / (round1 + round2 + reply1 + reply2);
+      this->lastComputedRange = tof.getAsMeters();
+    }
   }
   
   float getLastComputedRange() {
@@ -42,7 +46,7 @@ const uint8_t PIN_IRQ = 2; // irq pin
 const uint8_t PIN_SS = SS; // spi select pin
 
 //Protocol: one byte for ID, then five bytes for the timestamp of the sending of the message, then a list of device specific stuff. 
-//For each device, append one byte for the ID of the device, five bytes for timestamp of last received message from them, and four bytes for last calculated range
+//For each device, append one byte for the ID of the device, one byte for the shared counter (used to detect lost transmissions), five bytes for timestamp of last received message from them, and four bytes for last calculated range
 
 // data buffer
 #define LEN_DATA 256
@@ -159,6 +163,7 @@ void loop() {
     if (idx == -1) {
       devices[curNumDevices].id = fromID;
       devices[curNumDevices].timeDeviceSent = timeDeviceSent;
+      devices[curNumDevices].transmissionCount = 1;
       idx = curNumDevices;
       curNumDevices++;
       Serial.print("New device found. ID: "); Serial.println(fromID); 
@@ -169,6 +174,10 @@ void loop() {
       //First byte, device ID
       byte deviceID = data[i];
       i++; 
+      
+      //Second byte, transmission counter
+      byte transmissionCount = data[i];
+      i++;
       
       //Next five bytes are the timestamp of when the device received our last transmit
       DW1000Time timeDeviceReceived(data + i);
@@ -184,16 +193,29 @@ void loop() {
         //Mark down the two timestamps it included, as well as the time we received it
         devices[idx].timeDeviceReceived = timeDeviceReceived;
         devices[idx].timeDeviceSent = timeDeviceSent;
-        devices[idx].timeReceived = timeReceived; 
-        devices[idx].computeRange();
+        devices[idx].timeReceived = timeReceived;
+        
+        Serial.print("Transmission received from tag "); Serial.print(devices[idx].id); Serial.print(" with transmission count "); Serial.println(devices[idx].transmissionCount);
+                
+        //If everything looks good, we can compute the range! 
+        if (devices[idx].transmissionCount == transmissionCount) {
+          if (transmissionCount != 0) {
+            devices[idx].computeRange();
+            Serial.print("New range from this tag to "); Serial.print(devices[idx].id); Serial.print(". Meters: "); Serial.println(devices[idx].getLastComputedRange());
+          }
+          devices[idx].transmissionCount++;
+        } else {
+          //Error in transmission!
+          devices[idx].transmissionCount = 0; 
+          Serial.println("Transmission count does not match. Resetting device info.");
+        }
         devices[idx].timeDevicePrevSent = timeDeviceSent;
         devices[idx].timePrevReceived = timeReceived;
-        Serial.print("New range from this tag to "); Serial.print(devices[idx].id); Serial.print(". Meters: "); Serial.println(devices[idx].getLastComputedRange());
       } else {
         Serial.print("Reported range from "); Serial.print(fromID); Serial.print("<->"); Serial.print(deviceID); Serial.println(", meters: "); Serial.println(range);
       }
     }
-   
+    //TODO if our device was not in the list and we think it should have been, raise an error/reset the ranging stuff. Being robust is important!
   }
   
   if (curMillis - lastTransmission > 300) {
@@ -211,6 +233,8 @@ void loop() {
     for (int i = 0; i < curNumDevices; i++) {
       data[curByte] = devices[i].id;
       curByte++;
+      data[curByte] = devices[i].transmissionCount;
+      curByte++;
       devices[i].timeReceived.getTimestamp(data + curByte); //last timestamp will contain the time we last received a transmission
       curByte += 5;
       float range = devices[i].getLastComputedRange();
@@ -218,6 +242,10 @@ void loop() {
       memcpy(data + curByte, &range, 4); //floats are 4 bytes
       curByte += 4;
       
+      devices[i].transmissionCount++; //Increment for every tranmission, the other device will also increment and we can check to see if they're the same to ensure the transmission was received
+    }
+    
+    for (int i = 0; i < NUM_DEVICES; i++) {
       devices[i].timeSent = timeSent;
     }
     
