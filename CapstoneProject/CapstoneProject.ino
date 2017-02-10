@@ -62,6 +62,8 @@ void Device::computeRange() {
   DW1000Time round2 = (timeReceived - timeSent).wrap();
   DW1000Time reply2 = (timeDeviceSent - timeDeviceReceived).wrap();
   
+  Serial.print("Calculating range. round1, reply1, round2, reply2: "); Serial.print(round1); Serial.print(" "); Serial.print(reply1); Serial.print(" "); Serial.print(round2); Serial.print(" "); Serial.println(reply2);
+  
   if (round1.getTimestamp() > reply1.getTimestamp() &&
       round2.getTimestamp() > reply2.getTimestamp() ) { //Sanity check to ensure we're not doing incorrect math
       
@@ -237,15 +239,17 @@ void doTransmit() {
     }
   }
   
+  //Do the actual transmission
+  DW1000.newTransmit();
+  DW1000.setDefaults();
+  
   //Now we figure out the time to send this message!
   DW1000Time deltaTime = DW1000Time(DELAY_TIME_US, DW1000Time::MICROSECONDS);
   DW1000Time timeSent = DW1000.setDelay(deltaTime);
   timeSent.getTimestamp(data + 1); //set second byte (5 bytes will be written) to the timestamp
   
-  //Do the actual transmission
-  DW1000.newTransmit();
-  DW1000.setDefaults();
   DW1000.setData(data, curByte);
+  
   DW1000.startTransmit();
   
   for (int i = 0; i < NUM_DEVICES; i++) {
