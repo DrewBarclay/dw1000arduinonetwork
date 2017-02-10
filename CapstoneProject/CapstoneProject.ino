@@ -48,8 +48,8 @@ const byte OUR_ID = 1;
 
 long lastTransmission; //from millis()
 
-// reply times (same on both sides for symm. ranging)
-const unsigned int DELAY_TIME_US = 1000;
+// reply times (same on both sides for symm. ranging), should be at least 3ms (3000us)
+const unsigned int DELAY_TIME_US = 3000;
 
 volatile bool received; //Set when we are interrupted because we have received a transmission
 // CONSTANTS AND DATA END
@@ -63,13 +63,9 @@ void Device::computeRange() {
   DW1000Time reply2 = (timeDeviceSent - timeDeviceReceived).wrap();
   
   Serial.print("Calculating range. round1, reply1, round2, reply2: "); Serial.print(round1); Serial.print(" "); Serial.print(reply1); Serial.print(" "); Serial.print(round2); Serial.print(" "); Serial.println(reply2);
-  
-  if (round1.getTimestamp() > reply1.getTimestamp() &&
-      round2.getTimestamp() > reply2.getTimestamp() ) { //Sanity check to ensure we're not doing incorrect math
-      
-    DW1000Time tof = (round1 * round2 - reply1 * reply2) / (round1 + round2 + reply1 + reply2);
-    this->lastComputedRange = tof.getAsMeters();
-  }
+    
+  DW1000Time tof = (round1 * round2 - reply1 * reply2) / (round1 + round2 + reply1 + reply2);
+  this->lastComputedRange = tof.getAsMeters();
 }
 
 void setup() {
