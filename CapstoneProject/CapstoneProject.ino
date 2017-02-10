@@ -30,7 +30,7 @@ public:
 
 // CONSTANTS AND DATA START
 //number of devices that can form a network at once
-#define NUM_DEVICES 4
+#define NUM_DEVICES 5
 Device devices[NUM_DEVICES];
 int curNumDevices;
 
@@ -44,7 +44,7 @@ const uint8_t PIN_SS = SS; // spi select pin
 byte data[LEN_DATA];
 
 //id for this device
-const byte OUR_ID = 1;
+const byte OUR_ID = 5;
 
 long lastTransmission; //from millis()
 
@@ -61,8 +61,6 @@ void Device::computeRange() {
   DW1000Time reply1 = (timeSent - timePrevReceived).wrap();
   DW1000Time round2 = (timeReceived - timeSent).wrap();
   DW1000Time reply2 = (timeDeviceSent - timeDeviceReceived).wrap();
-  
-  Serial.print("Calculating range. round1, reply1, round2, reply2: "); Serial.print(round1); Serial.print(" "); Serial.print(reply1); Serial.print(" "); Serial.print(round2); Serial.print(" "); Serial.println(reply2);
     
   DW1000Time tof = (round1 * round2 - reply1 * reply2) / (round1 + round2 + reply1 + reply2);
   this->lastComputedRange = tof.getAsMeters();
@@ -111,7 +109,6 @@ void handleSent() {
 
 void handleReceived() {
   received = true;
-  Serial.println("Received, set.");
 }
 
 void receiver() {
@@ -125,7 +122,6 @@ void receiver() {
 void parseReceived() {
   unsigned int len = DW1000.getDataLength();
   DW1000Time timeReceived;
-  Serial.println("Rec"); Serial.println(len);
   DW1000.getData(data, len);
   DW1000.getReceiveTimestamp(timeReceived);
   
@@ -204,9 +200,10 @@ void parseReceived() {
       
       devices[idx].timeDevicePrevSent = timeDeviceSent;
       devices[idx].timePrevReceived = timeReceived;
-    } else {
-      Serial.print("Reported range from "); Serial.print(fromID); Serial.print("<->"); Serial.print(deviceID); Serial.println(", meters: "); Serial.println(range);
-    }
+    } 
+    
+    Serial.print("Reported range from "); Serial.print(fromID); Serial.print("<->"); Serial.print(deviceID); Serial.print(", meters: "); Serial.println(range);
+    
   }
   //TODO if our device was not in the list and we think it should have been, raise an error/reset the ranging stuff. Being robust is important!
 }
@@ -225,7 +222,6 @@ void doTransmit() {
     devices[i].timeReceived.getTimestamp(data + curByte); //last timestamp will contain the time we last received a transmission
     curByte += 5;
     float range = devices[i].getLastComputedRange();
-    Serial.print("Range, ID: "); Serial.print(range); Serial.print(" "); Serial.println(devices[i].id);
     memcpy(data + curByte, &range, 4); //floats are 4 bytes
     curByte += 4;
     
