@@ -1,4 +1,5 @@
 //Created by Drew Barclay
+//Code uses thotro's dwm1000-arduino project
 //Protocol: one byte for ID, then five bytes for the timestamp of the sending of the message, then a list of device specific stuff. 
 //For each device, append one byte for the ID of the device, one byte for the shared counter (used to detect lost transmissions), five bytes for timestamp of last received message from them, and four bytes for last calculated range
 
@@ -83,7 +84,7 @@ void setup() {
     // general configuration
     DW1000.newConfiguration();
     DW1000.setDefaults();
-    DW1000.setDeviceAddress(2);
+    DW1000.setDeviceAddress(OUR_ID);
     DW1000.setNetworkId(10);
     DW1000.enableMode(DW1000.MODE_LONGDATA_RANGE_ACCURACY);
     DW1000.commitConfiguration();
@@ -125,6 +126,7 @@ void receiver() {
 
 void parseReceived() {
   unsigned int len = DW1000.getDataLength();
+  DW1000Time timeReceived;
   Serial.println("Rec"); Serial.println(len);
   DW1000.getData(data, len);
   DW1000.getReceiveTimestamp(timeReceived);
@@ -143,7 +145,7 @@ void parseReceived() {
   //If this device is not in our list, add it now.
   int idx = -1;
   for (int i = 0; i < curNumDevices; i++) {
-   if (devices[i].id == id) {
+   if (devices[i].id == fromID) {
      idx = i;
    }
   }
@@ -185,10 +187,13 @@ void parseReceived() {
       devices[idx].timeReceived = timeReceived;
       
       Serial.print("Transmission received from tag "); Serial.print(devices[idx].id); Serial.print(" with transmission count "); Serial.println(devices[idx].transmissionCount);
-              
+      
       //If everything looks good, we can compute the range! 
-      if (devices[idx].transmissionCount == transmissionCount) {
-        if (transmissionCount != 0) {
+      if (transmissionCount == 0) {
+        //Error sending, reset everything.
+        devices[idx].transmissionCount = 1;
+      } else if (devices[idx].transmissionCount == transmissionCount) {
+        if (devices[idx].transmissionCount > 1) {
           devices[idx].computeRange();
           Serial.print("New range from this tag to "); Serial.print(devices[idx].id); Serial.print(". Meters: "); Serial.println(devices[idx].getLastComputedRange());
         }
@@ -196,8 +201,9 @@ void parseReceived() {
       } else {
         //Error in transmission!
         devices[idx].transmissionCount = 0; 
-        Serial.println("Transmission count does not match. Resetting device info.");
+        Serial.println("Transmission count does not match.");
       }
+      
       devices[idx].timeDevicePrevSent = timeDeviceSent;
       devices[idx].timePrevReceived = timeReceived;
     } else {
@@ -225,7 +231,10 @@ void doTransmit() {
     memcpy(data + curByte, &range, 4); //floats are 4 bytes
     curByte += 4;
     
-    devices[i].transmissionCount++; //Increment for every tranmission, the other device will also increment and we can check to see if they're the same to ensure the transmission was received
+    if (devices[i].hasReplied) {
+      devices[i].transmissionCount++; //Increment for every transmission, the other device will also increment and we can check to see if they're the same to ensure the transmission was received
+      devices[i].hasReplied = false; //Set to not for this round
+    }
   }
   
   //Now we figure out the time to send this message!
@@ -242,6 +251,8 @@ void doTransmit() {
   for (int i = 0; i < NUM_DEVICES; i++) {
     devices[i].timeSent = timeSent;
   }
+  
+  received = false; //Just in case we received, we can't handle a message now because we overrode the data. one lost transmission! Oh well.
 }
 
 void loop() {
