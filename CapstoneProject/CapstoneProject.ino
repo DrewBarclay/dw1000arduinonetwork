@@ -30,7 +30,7 @@ public:
 
 // CONSTANTS AND DATA START
 //number of devices that can form a network at once
-#define NUM_DEVICES 5
+#define NUM_DEVICES 6
 Device devices[NUM_DEVICES];
 int curNumDevices;
 
@@ -49,7 +49,7 @@ const byte OUR_ID = 5;
 long lastTransmission; //from millis()
 
 // delay time before sending a message, should be at least 3ms (3000us)
-const unsigned int DELAY_TIME_US = 2048 + 1000 + 5*83 + 200; //should be equal to preamble symbols (each take ~1us to transmit) + 1000 (base time to communicate and start transmitting and calculating a delay timestamp) + 4.5*bytes of data to send. add a little fudge room too. (experimentally found.) in microseconds.
+const unsigned int DELAY_TIME_US = 2048 + 1000 + NUM_DEVICES*83 + 200; //should be equal to preamble symbols (each take ~1us to transmit) + 1000 (base time to communicate and start transmitting and calculating a delay timestamp) + 4.5*bytes of data to send. add a little fudge room too. (experimentally found.) in microseconds.
 
 volatile bool received; //Set when we are interrupted because we have received a transmission
 // CONSTANTS AND DATA END
@@ -241,17 +241,11 @@ void doTransmit() {
   
   //Now we figure out the time to send this message!
   DW1000Time deltaTime = DW1000Time(DELAY_TIME_US, DW1000Time::MICROSECONDS);
-  DW1000Time time1;
-  DW1000.getSystemTimestamp(time1);
   DW1000Time timeSent = DW1000.setDelay(deltaTime);
   timeSent.getTimestamp(data + 1); //set second byte (5 bytes will be written) to the timestamp
   
-  DW1000.setData(data, curByte * 16);
+  DW1000.setData(data, curByte);
   DW1000.startTransmit();
-  
-  DW1000Time time2;
-  DW1000.getSystemTimestamp(time2);
-  Serial.print("Time delay: "); Serial.println((time2 - time1).getAsMicroSeconds());
   
   for (int i = 0; i < NUM_DEVICES; i++) {
     devices[i].timeSent = timeSent;
