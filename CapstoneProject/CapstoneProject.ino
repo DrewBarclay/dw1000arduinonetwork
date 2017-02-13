@@ -19,7 +19,7 @@ public:
   float lastComputedRange;
   bool hasReplied;
   
-  Device() : lastComputedRange(0.0f) {}
+  Device() : lastComputedRange(0.0f), id(0), hasReplied(false) {}
   
   void computeRange();
   
@@ -48,8 +48,8 @@ const byte OUR_ID = 5;
 
 long lastTransmission; //from millis()
 
-// reply times (same on both sides for symm. ranging), should be at least 3ms (3000us)
-const unsigned int DELAY_TIME_US = 3000;
+// delay time before sending a message, should be at least 3ms (3000us)
+const unsigned int DELAY_TIME_US = 2048 + 1000 + 5*83 + 200; //should be equal to preamble symbols (each take ~1us to transmit) + 1000 (base time to communicate and start transmitting and calculating a delay timestamp) + 4.5*bytes of data to send. add a little fudge room too. (experimentally found.) in microseconds.
 
 volatile bool received; //Set when we are interrupted because we have received a transmission
 // CONSTANTS AND DATA END
@@ -144,12 +144,16 @@ void parseReceived() {
    }
   }
   if (idx == -1) { //If we haven't seen this device before...
+    Serial.print("New device found. ID: "); Serial.println(fromID); 
+    if (curNumDevices == NUM_DEVICES) {
+      Serial.println("Max # of devices exceeded. Returning early from receive.");
+      return; 
+    }
     devices[curNumDevices].id = fromID;
     devices[curNumDevices].timeDeviceSent = timeDeviceSent;
     devices[curNumDevices].transmissionCount = 1;
     idx = curNumDevices;
     curNumDevices++;
-    Serial.print("New device found. ID: "); Serial.println(fromID); 
   } 
   
   devices[idx].hasReplied = true;
@@ -237,18 +241,21 @@ void doTransmit() {
   
   //Now we figure out the time to send this message!
   DW1000Time deltaTime = DW1000Time(DELAY_TIME_US, DW1000Time::MICROSECONDS);
+  DW1000Time time1;
+  DW1000.getSystemTimestamp(time1);
   DW1000Time timeSent = DW1000.setDelay(deltaTime);
   timeSent.getTimestamp(data + 1); //set second byte (5 bytes will be written) to the timestamp
   
-  DW1000.setData(data, curByte);
-  
+  DW1000.setData(data, curByte * 16);
   DW1000.startTransmit();
+  
+  DW1000Time time2;
+  DW1000.getSystemTimestamp(time2);
+  Serial.print("Time delay: "); Serial.println((time2 - time1).getAsMicroSeconds());
   
   for (int i = 0; i < NUM_DEVICES; i++) {
     devices[i].timeSent = timeSent;
   }
-  
-  received = false; //Just in case we received, we can't handle a message now because we overrode the data. one lost transmission! Oh well.
 }
 
 void loop() {
