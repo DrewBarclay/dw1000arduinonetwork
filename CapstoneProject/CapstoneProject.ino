@@ -46,7 +46,7 @@ const uint8_t PIN_SS = SS; // spi select pin
 byte data[LEN_DATA];
 
 //id for this device
-const byte OUR_ID = 3;
+const byte OUR_ID = 2;
 const byte DUMMY_ID = 255; //for use with ending a round
 
 unsigned long timerStart; //from millis() for use with various code needing a reference start time
@@ -58,7 +58,7 @@ boolean lastReceivedWasNew = false;
 byte expectedIDIdx = 0;
 
 // delay time before sending a message, should be at least 3ms (3000us)
-const unsigned int DELAY_TIME_US = 2048 + 1000 + NUM_DEVICES * 83 + 200; //should be equal to preamble symbols (each take ~1us to transmit) + 1000 (base time to communicate and start transmitting and calculating a delay timestamp) + 4.5*bytes of data to send. add a little fudge room too. (experimentally found.) in microseconds.
+const unsigned int DELAY_TIME_US = 128 + 1000 + NUM_DEVICES * 83 + 200; //should be equal to preamble symbols (each take ~1us to transmit) + 1000 (base time to communicate and start transmitting and calculating a delay timestamp) + 4.5*bytes of data to send. add a little fudge room too. (experimentally found.) in microseconds.
 const unsigned long DELAY_UNTIL_ASSUMED_LOST = 8000 + 1200 + DELAY_TIME_US + 1000; //estimated max parse time + transmit time + delay time on transmit + fudge factor
 
 volatile bool received; //Set when we are interrupted because we have received a transmission
@@ -106,7 +106,7 @@ void setup() {
   DW1000.setDefaults();
   DW1000.setDeviceAddress(OUR_ID);
   DW1000.setNetworkId(10);
-  DW1000.enableMode(DW1000.MODE_LONGDATA_RANGE_ACCURACY);
+  DW1000.enableMode(DW1000.MODE_SHORTDATA_FAST_ACCURACY);
   DW1000.commitConfiguration();
   Serial.println(F("Committed configuration ..."));
 
