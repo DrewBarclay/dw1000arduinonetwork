@@ -110,7 +110,7 @@ void setup() {
   DW1000.enableMode(DW1000.MODE_LONGDATA_RANGE_ACCURACY);
   //const byte mode[] = {DW1000.TRX_RATE_850KBPS, DW1000.TX_PULSE_FREQ_16MHZ, DW1000.TX_PREAMBLE_LEN_512};
   //DW1000.enableMode(mode);
-  DW1000.commitConfiguration();
+  DW1000.commitConfiguration(16600);
   Serial.println(F("Committed configuration ..."));
 
   // attach callback for (successfully) sent and received messages

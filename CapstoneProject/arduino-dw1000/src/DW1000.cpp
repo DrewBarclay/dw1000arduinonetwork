@@ -1035,6 +1035,10 @@ void DW1000Class::commitConfiguration(int32_t delay) {
 	writeBytes(LDE_IF, LDE_RXANTD_SUB, antennaDelayBytes, LEN_LDE_RXANTD);
 }
 
+void DW1000Class::commitConfiguration() {
+	DW1000.commitConfiguration(16600);
+}
+
 void DW1000Class::waitForResponse(boolean val) {
 	setBit(_sysctrl, LEN_SYS_CTRL, WAIT4RESP_BIT, val);
 }
