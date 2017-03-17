@@ -289,7 +289,7 @@ public:
 	
 	// general configuration state
 	static void newConfiguration();
-	static void commitConfiguration();
+	static void commitConfiguration(int32_t delay);
 	
 	// reception state
 	static void newReceive();

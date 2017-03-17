@@ -1017,7 +1017,7 @@ void DW1000Class::newConfiguration() {
 	readSystemEventMaskRegister();
 }
 
-void DW1000Class::commitConfiguration() {
+void DW1000Class::commitConfiguration(int32_t delay) {
 	// write all configurations back to device
 	writeNetworkIdAndDeviceAddress();
 	writeSystemConfigurationRegister();
@@ -1029,11 +1029,7 @@ void DW1000Class::commitConfiguration() {
 	// TODO clean up code + antenna delay/calibration API
 	// TODO setter + check not larger two bytes integer
 	byte antennaDelayBytes[LEN_STAMP];
-	#ifndef ANTENNA_DELAY
-	writeValueToBytes(antennaDelayBytes, 16384, LEN_STAMP);
-	#else 
-	writeValueToBytes(antennaDelayBytes, ANTENNA_DELAY, LEN_STAMP);
-	#endif
+	writeValueToBytes(antennaDelayBytes, delay, LEN_STAMP);
 	_antennaDelay.setTimestamp(antennaDelayBytes);
 	writeBytes(TX_ANTD, NO_SUB, antennaDelayBytes, LEN_TX_ANTD);
 	writeBytes(LDE_IF, LDE_RXANTD_SUB, antennaDelayBytes, LEN_LDE_RXANTD);
