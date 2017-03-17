@@ -46,7 +46,7 @@ const uint8_t PIN_SS = SS; // spi select pin
 byte data[LEN_DATA];
 
 //id for this device
-const byte OUR_ID = 2;
+const byte OUR_ID = 7;
 const byte DUMMY_ID = 255; //for use with ending a round
 
 unsigned long timerStart; //from millis() for use with various code needing a reference start time
@@ -58,7 +58,7 @@ boolean lastReceivedWasNew = false;
 byte expectedIDIdx = 0;
 
 // delay time before sending a message, should be at least 3ms (3000us)
-const unsigned int DELAY_TIME_US = 128 + 1000 + NUM_DEVICES * 83 + 200; //should be equal to preamble symbols (each take ~1us to transmit) + 1000 (base time to communicate and start transmitting and calculating a delay timestamp) + 4.5*bytes of data to send. add a little fudge room too. (experimentally found.) in microseconds.
+const unsigned int DELAY_TIME_US = 2048 + 1000 + NUM_DEVICES * 83 + 200; //should be equal to preamble symbols (each take ~1us to transmit) + 1000 (base time to communicate and start transmitting and calculating a delay timestamp) + 4.5*bytes of data to send. add a little fudge room too. (experimentally found.) in microseconds.
 const unsigned long DELAY_UNTIL_ASSUMED_LOST = 8000 + 1200 + DELAY_TIME_US + 1000; //estimated max parse time + transmit time + delay time on transmit + fudge factor
 
 volatile bool received; //Set when we are interrupted because we have received a transmission
@@ -106,7 +106,9 @@ void setup() {
   DW1000.setDefaults();
   DW1000.setDeviceAddress(OUR_ID);
   DW1000.setNetworkId(10);
-  DW1000.enableMode(DW1000.MODE_SHORTDATA_FAST_ACCURACY);
+  DW1000.enableMode(DW1000.MODE_LONGDATA_RANGE_ACCURACY);
+  //const byte mode[] = {DW1000.TRX_RATE_850KBPS, DW1000.TX_PULSE_FREQ_16MHZ, DW1000.TX_PREAMBLE_LEN_512};
+  //DW1000.enableMode(mode);
   DW1000.commitConfiguration();
   Serial.println(F("Committed configuration ..."));
 
@@ -144,6 +146,8 @@ void receiver() {
 }
 
 void parseReceived() {
+  unsigned long parseTimer = micros();
+
   unsigned int len = DW1000.getDataLength();
   DW1000Time timeReceived;
   DW1000.getData(data, len);
@@ -180,12 +184,12 @@ void parseReceived() {
     //Find a place to put it in the transmission order
     int txIdx = 0;
     for (txIdx = 0; txIdx < TX_ORDER_SIZE(); txIdx++) {
-      if (OUR_ID < txOrder[txIdx]) {
+      if (fromID < txOrder[txIdx]) {
         break;
       }
     }
     //Move everything up by 1 position to make room for this
-    memmove(devices + txIdx + 1, devices + txIdx, sizeof(Device) * (TX_ORDER_SIZE() - txIdx));
+    memmove(txOrder + txIdx + 1, txOrder + txIdx, sizeof(byte) * (TX_ORDER_SIZE() - txIdx));
     txOrder[txIdx] = fromID;
 
     //Add it to the device list
@@ -226,7 +230,7 @@ void parseReceived() {
       devices[idx].timeDeviceSent = timeDeviceSent;
       devices[idx].timeReceived = timeReceived;
 
-      Serial.print("Transmission received from tag "); Serial.print(devices[idx].id); Serial.print(" with transmission count "); Serial.println(devices[idx].transmissionCount);
+      //Serial.print("Transmission received from tag "); Serial.print(devices[idx].id); Serial.print(" with transmission count "); Serial.println(devices[idx].transmissionCount);
 
       //If everything looks good, we can compute the range!
       if (transmissionCount == 0) {
@@ -241,7 +245,7 @@ void parseReceived() {
       } else {
         //Error in transmission!
         devices[idx].transmissionCount = 0;
-        Serial.println("Transmission count does not match.");
+        //Serial.println("Transmission count does not match.");
       }
 
       devices[idx].timeDevicePrevSent = timeDeviceSent;
@@ -250,9 +254,13 @@ void parseReceived() {
 
     Serial.print("!range "); Serial.print(fromID); Serial.print(" "); Serial.print(deviceID); Serial.print(" "); Serial.println(range);
   }
+
+  Serial.print("Receive time: "); Serial.println(micros() - parseTimer);
 }
 
 void doTransmit() {
+  unsigned long transmitTimer = micros();
+
   data[0] = OUR_ID;
 
   //Normally we would set the timestamp for when we send here (starting at the second byte), but we'll do that later because this can take a while to calculate and we want the delay before sending to be short
@@ -291,6 +299,8 @@ void doTransmit() {
   for (int i = 0; i < NUM_DEVICES; i++) {
     devices[i].timeSent = timeSent;
   }
+
+  Serial.print("Transmit time: "); Serial.println(micros() - transmitTimer);
 }
 
 enum state_t {START_UP, ENTERING_NETWORK, IN_THE_ROUND} state;
@@ -300,11 +310,16 @@ void debug() {
   Serial.print(", state: "); Serial.print(state);
   Serial.print(", OUR_ID: "); Serial.print(OUR_ID);
   Serial.print(", devices[0].id: "); Serial.println(devices[0].id);
+  Serial.print("Devices: ");
+  for (int i = 0; i < TX_ORDER_SIZE(); i++) {
+    Serial.print(txOrder[i]); Serial.print(" " );
+  }
+  Serial.println();
 }
 
 void checkTxOrderTime() {
   //Check timer and update if the last device was too slow
-  if (micros() - txTimerStart > DELAY_UNTIL_ASSUMED_LOST) {
+  if (micros() - txTimerStart > DELAY_UNTIL_ASSUMED_LOST + curNumDevices * 2000) {
     expectedIDIdx = (expectedIDIdx + 1) % TX_ORDER_SIZE();
     txTimerStart = micros();
     tookTurn = false;
@@ -331,7 +346,7 @@ void updateExpectedTx() {
     return;
   }
 
-  expectedIDIdx = (expectedIDIdx + 1) % TX_ORDER_SIZE();
+  expectedIDIdx = (idx + 1) % TX_ORDER_SIZE();
   tookTurn = false;
 }
 
@@ -359,7 +374,7 @@ void loop() {
 
   switch (state) {
     case START_UP:
-      if (millis() - timerStart > NUM_DEVICES * 50) {
+      if (millis() - timerStart > NUM_DEVICES * 100) {
         state = ENTERING_NETWORK; //Wait a little while before transmitting so this device doesn't interfere with the rest of the network
       }
       break;
@@ -376,6 +391,7 @@ void loop() {
         doTransmit();
         //Timer is not set here; if successfully sent, it is set in the if (sent) block above. Otherwise, we will move our expected ID up when the round expires.
         tookTurn = true;
+        Serial.print("!id "); Serial.println(OUR_ID);
       }
       break;
   }
