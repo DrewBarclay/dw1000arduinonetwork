@@ -4,6 +4,7 @@
 //For each device, append one byte for the ID of the device, one byte for the shared counter (used to detect lost transmissions), five bytes for timestamp of last received message from them, and four bytes for last calculated range
 
 #include <SPI.h>
+#define ANTENNA_DELAY 16384
 #include <DW1000.h>
 
 class Device  {
@@ -95,7 +96,7 @@ void setup() {
   curNumDevices = 0;
   timerStart = millis();
 
-  Serial.begin(115200);
+  Serial.begin(19200);
   delay(1000);
   // initialize the driver
   DW1000.begin(PIN_IRQ, PIN_RST);
