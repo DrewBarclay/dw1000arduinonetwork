@@ -45,7 +45,7 @@ const uint8_t PIN_SS = SS; // spi select pin
 byte data[LEN_DATA];
 
 //id for this device
-const byte OUR_ID = 7;
+const byte OUR_ID = 6;
 const byte DUMMY_ID = 255; //for use with ending a round
 
 unsigned long timerStart; //from millis() for use with various code needing a reference start time
@@ -276,7 +276,7 @@ void parseReceived() {
 }
 
 void doTransmit() {
-  unsigned long transmitTimer = micros();
+  unsigned int transmitTimer = (unsigned int)millis();
 
   data[0] = OUR_ID;
 
@@ -317,7 +317,7 @@ void doTransmit() {
     devices[i].timeSent = timeSent;
   }
 
-  Serial.print("Transmit time: "); Serial.println(micros() - transmitTimer);
+  Serial.print("Transmit time: "); Serial.println((unsigned int)(millis()) - transmitTimer);
 }
 
 void debug() {
