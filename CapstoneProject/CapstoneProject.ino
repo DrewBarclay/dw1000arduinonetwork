@@ -45,7 +45,7 @@ const uint8_t PIN_SS = SS; // spi select pin
 byte data[LEN_DATA];
 
 //id for this device
-const byte OUR_ID = 6;
+const byte OUR_ID = 7;
 const byte DUMMY_ID = 255; //for use with ending a round
 
 unsigned long timerStart; //from millis() for use with various code needing a reference start time
@@ -97,7 +97,7 @@ void setup() {
   curNumDevices = 0;
   timerStart = millis();
 
-  Serial.begin(9600);
+  Serial.begin(115200);
   delay(1000);
   // initialize the driver
   DW1000.begin(PIN_IRQ, PIN_RST);
@@ -221,6 +221,8 @@ void parseReceived() {
 
   //Now, a list of device-specific stuff
   for (int i = 6; i < len;) {
+    String output = "";
+
     //First byte, device ID
     byte deviceID = data[i];
     i++;
@@ -255,7 +257,8 @@ void parseReceived() {
         if (devices[idx].transmissionCount > 1) {
           devices[idx].computeRange();
           //Serial.println(devices[idx].getLastComputedRange());
-          Serial.print("!range "); Serial.print(OUR_ID); Serial.print(" "); Serial.print(devices[idx].id); Serial.print(" "); Serial.println(devices[idx].getLastComputedRange());
+          output += "!range "; output += OUR_ID; output += " "; output += devices[idx].id; output += " "; output += devices[idx].getLastComputedRange(); output += "\n";
+          //Serial.print("!range "); Serial.print(OUR_ID); Serial.print(" "); Serial.print(devices[idx].id); Serial.print(" "); Serial.println(devices[idx].getLastComputedRange());
         }
         devices[idx].transmissionCount++;
       } else {
@@ -269,7 +272,10 @@ void parseReceived() {
     }
 
     //Serial.println(range);
-    Serial.print("!range "); Serial.print(fromID); Serial.print(" "); Serial.print(deviceID); Serial.print(" "); Serial.println(range);
+    output += "!range "; output += fromID; output += " "; output += deviceID; output += " "; output += range; output += "\n";
+    //Serial.print("!range "); Serial.print(fromID); Serial.print(" "); Serial.print(deviceID); Serial.print(" "); Serial.println(range);
+
+    Serial.print(output);
   }
 
   Serial.print("Receive time: "); Serial.println(micros() - parseTimer);
@@ -367,7 +373,7 @@ void updateExpectedTx() {
 
 void loop() {
   //debug();
-  
+
   if (received && !tookTurn) {
     received = false;
     unsigned long start = micros(); //This marks the beginning, since the delay used is always receive + transmit + delay time we must do this before parsing the receive
