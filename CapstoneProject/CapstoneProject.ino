@@ -4,7 +4,6 @@
 //For each device, append one byte for the ID of the device, one byte for the shared counter (used to detect lost transmissions), five bytes for timestamp of last received message from them, and four bytes for last calculated range
 
 #include <SPI.h>
-#define ANTENNA_DELAY 16384
 #include <DW1000.h>
 
 class Device  {
@@ -96,7 +95,7 @@ void setup() {
   curNumDevices = 0;
   timerStart = millis();
 
-  Serial.begin(19200);
+  Serial.begin(9600);
   delay(1000);
   // initialize the driver
   DW1000.begin(PIN_IRQ, PIN_RST);
@@ -110,7 +109,11 @@ void setup() {
   DW1000.enableMode(DW1000.MODE_LONGDATA_RANGE_ACCURACY);
   //const byte mode[] = {DW1000.TRX_RATE_850KBPS, DW1000.TX_PULSE_FREQ_16MHZ, DW1000.TX_PREAMBLE_LEN_512};
   //DW1000.enableMode(mode);
-  DW1000.commitConfiguration(16600);
+  if (OUR_ID >= 5) { //tag
+    DW1000.commitConfiguration(16470);
+  } else { //anchor
+    DW1000.commitConfiguration(16500);
+  }
   Serial.println(F("Committed configuration ..."));
 
   // attach callback for (successfully) sent and received messages
@@ -240,6 +243,7 @@ void parseReceived() {
       } else if (devices[idx].transmissionCount == transmissionCount) {
         if (devices[idx].transmissionCount > 1) {
           devices[idx].computeRange();
+          //Serial.println(devices[idx].getLastComputedRange());
           Serial.print("!range "); Serial.print(OUR_ID); Serial.print(" "); Serial.print(devices[idx].id); Serial.print(" "); Serial.println(devices[idx].getLastComputedRange());
         }
         devices[idx].transmissionCount++;
@@ -253,10 +257,11 @@ void parseReceived() {
       devices[idx].timePrevReceived = timeReceived;
     }
 
+    //Serial.println(range);
     Serial.print("!range "); Serial.print(fromID); Serial.print(" "); Serial.print(deviceID); Serial.print(" "); Serial.println(range);
   }
 
-  Serial.print("Receive time: "); Serial.println(micros() - parseTimer);
+  //Serial.print("Receive time: "); Serial.println(micros() - parseTimer);
 }
 
 void doTransmit() {
@@ -301,7 +306,7 @@ void doTransmit() {
     devices[i].timeSent = timeSent;
   }
 
-  Serial.print("Transmit time: "); Serial.println(micros() - transmitTimer);
+  //Serial.print("Transmit time: "); Serial.println(micros() - transmitTimer);
 }
 
 enum state_t {START_UP, ENTERING_NETWORK, IN_THE_ROUND} state;
@@ -320,7 +325,7 @@ void debug() {
 
 void checkTxOrderTime() {
   //Check timer and update if the last device was too slow
-  if (micros() - txTimerStart > DELAY_UNTIL_ASSUMED_LOST + curNumDevices * 2000) {
+  if (micros() - txTimerStart > DELAY_UNTIL_ASSUMED_LOST + curNumDevices * 2100) {
     expectedIDIdx = (expectedIDIdx + 1) % TX_ORDER_SIZE();
     txTimerStart = micros();
     tookTurn = false;
