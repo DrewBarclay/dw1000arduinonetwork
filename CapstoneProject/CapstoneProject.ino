@@ -33,7 +33,6 @@ class Device  {
 #define NUM_DEVICES 6
 Device devices[NUM_DEVICES]; //Should be kept in order of increasing ID
 int curNumDevices;
-#define TX_ORDER_SIZE() (curNumDevices + 2)
 byte txOrder[NUM_DEVICES + 2]; //+2 because we include our own ID and a dummy ID here
 
 // connection pins
@@ -59,12 +58,16 @@ byte expectedIDIdx = 0;
 
 // delay time before sending a message, should be at least 3ms (3000us)
 const unsigned int DELAY_TIME_US = 2048 + 1000 + NUM_DEVICES * 83 + 200; //should be equal to preamble symbols (each take ~1us to transmit) + 1000 (base time to communicate and start transmitting and calculating a delay timestamp) + 4.5*bytes of data to send. add a little fudge room too. (experimentally found.) in microseconds.
-const unsigned long DELAY_UNTIL_ASSUMED_LOST = 8000 + 1200 + DELAY_TIME_US + 1000; //estimated max parse time + transmit time + delay time on transmit + fudge factor
+const unsigned long DELAY_UNTIL_ASSUMED_LOST = 9000 + 1500 + DELAY_TIME_US + 2000; //estimated max parse time + transmit time + delay time on transmit + fudge factor
 
 volatile bool received; //Set when we are interrupted because we have received a transmission
 volatile bool sent = false; //Set when we successfully send
 
 bool tookTurn = false;
+
+enum state_t {START_UP, ENTERING_NETWORK, IN_THE_ROUND} state;
+#define TX_ORDER_SIZE() (curNumDevices + 1 + ((state == IN_THE_ROUND) ? 1 : 0))
+
 // CONSTANTS AND DATA END
 
 void Device::computeRange() {
@@ -88,8 +91,7 @@ unsigned long max_ul(unsigned long a, unsigned long b) {
 }
 
 void setup() {
-  txOrder[0] = OUR_ID;
-  txOrder[1] = DUMMY_ID; //dummy value
+  txOrder[0] = DUMMY_ID;
 
   received = false;
   curNumDevices = 0;
@@ -149,6 +151,19 @@ void receiver() {
   DW1000.startReceive();
 }
 
+void addIDToTxOrder(byte id) {
+  //Find a place to put it in the transmission order
+  int txIdx = 0;
+  for (txIdx = 0; txIdx < TX_ORDER_SIZE(); txIdx++) {
+    if (id < txOrder[txIdx]) {
+      break;
+    }
+  }
+  //Move everything up by 1 position to make room for this
+  memmove(txOrder + txIdx + 1, txOrder + txIdx, sizeof(byte) * (TX_ORDER_SIZE() - txIdx));
+  txOrder[txIdx] = id;
+}
+
 void parseReceived() {
   unsigned long parseTimer = micros();
 
@@ -165,6 +180,11 @@ void parseReceived() {
   //Parse data
   //First byte, ID
   byte fromID = data[0];
+
+  if (fromID == OUR_ID) {
+    return; //this is an error and the send buffer has overwritten the receive buffer
+  }
+
   lastReceivedID = fromID;
 
   //Second byte, 5 byte timestamp when the transmission was sent (their clock)
@@ -185,16 +205,7 @@ void parseReceived() {
       return;
     }
 
-    //Find a place to put it in the transmission order
-    int txIdx = 0;
-    for (txIdx = 0; txIdx < TX_ORDER_SIZE(); txIdx++) {
-      if (fromID < txOrder[txIdx]) {
-        break;
-      }
-    }
-    //Move everything up by 1 position to make room for this
-    memmove(txOrder + txIdx + 1, txOrder + txIdx, sizeof(byte) * (TX_ORDER_SIZE() - txIdx));
-    txOrder[txIdx] = fromID;
+    addIDToTxOrder(fromID);
 
     //Add it to the device list
     devices[curNumDevices].id = fromID;
@@ -261,7 +272,7 @@ void parseReceived() {
     Serial.print("!range "); Serial.print(fromID); Serial.print(" "); Serial.print(deviceID); Serial.print(" "); Serial.println(range);
   }
 
-  //Serial.print("Receive time: "); Serial.println(micros() - parseTimer);
+  Serial.print("Receive time: "); Serial.println(micros() - parseTimer);
 }
 
 void doTransmit() {
@@ -306,10 +317,8 @@ void doTransmit() {
     devices[i].timeSent = timeSent;
   }
 
-  //Serial.print("Transmit time: "); Serial.println(micros() - transmitTimer);
+  Serial.print("Transmit time: "); Serial.println(micros() - transmitTimer);
 }
-
-enum state_t {START_UP, ENTERING_NETWORK, IN_THE_ROUND} state;
 
 void debug() {
   Serial.print("curNumDevices: "); Serial.print(curNumDevices);
@@ -325,7 +334,7 @@ void debug() {
 
 void checkTxOrderTime() {
   //Check timer and update if the last device was too slow
-  if (micros() - txTimerStart > DELAY_UNTIL_ASSUMED_LOST + curNumDevices * 2100) {
+  if (micros() - txTimerStart > DELAY_UNTIL_ASSUMED_LOST + curNumDevices * 2200) {
     expectedIDIdx = (expectedIDIdx + 1) % TX_ORDER_SIZE();
     txTimerStart = micros();
     tookTurn = false;
@@ -357,13 +366,17 @@ void updateExpectedTx() {
 }
 
 void loop() {
-  if (received) {
+  //debug();
+  
+  if (received && !tookTurn) {
     received = false;
     unsigned long start = micros(); //This marks the beginning, since the delay used is always receive + transmit + delay time we must do this before parsing the receive
     parseReceived();
     if (!lastReceivedWasNew) {
       updateExpectedTx();
       txTimerStart = start; //Only update for non-new devices
+    } else {
+      expectedIDIdx = TX_ORDER_SIZE() - 1; //The new device added changes the tx order array and we should set it back to the end of the round
     }
   }
 
@@ -388,13 +401,16 @@ void loop() {
       if (txOrder[expectedIDIdx] == DUMMY_ID) {
         //Round is over, we can jump in!
         doTransmit();
+        addIDToTxOrder(OUR_ID);
         state = IN_THE_ROUND;
+        expectedIDIdx = TX_ORDER_SIZE() - 1;
       }
       break;
     case IN_THE_ROUND:
       if (!tookTurn && OUR_ID == txOrder[expectedIDIdx]) {
         //Our turn to transmit!
         doTransmit();
+        received = false; //If a signal is received before we finished the doTransmit function then there will be issues as we overwrote the received data
         //Timer is not set here; if successfully sent, it is set in the if (sent) block above. Otherwise, we will move our expected ID up when the round expires.
         tookTurn = true;
         Serial.print("!id "); Serial.println(OUR_ID);

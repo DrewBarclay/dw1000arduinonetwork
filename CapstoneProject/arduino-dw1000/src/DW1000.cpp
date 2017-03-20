@@ -1211,7 +1211,7 @@ void DW1000Class::setData(byte data[], uint16_t n) {
 		return; // TODO proper error handling: frame/buffer size
 	}
 	// transmit data and length
-	writeBytes(TX_BUFFER, NO_SUB, data, n);
+	writeBytesOpt(TX_BUFFER, NO_SUB, data, n);
 	_txfctrl[0] = (byte)(n & 0xFF); // 1 byte (regular length + 1 bit)
 	_txfctrl[1] &= 0xE0;
 	_txfctrl[1] |= (byte)((n >> 8) & 0x03);  // 2 added bits if extended length
@@ -1669,6 +1669,35 @@ void DW1000Class::writeBytes(byte cmd, uint16_t offset, byte data[], uint16_t da
 	for(i = 0; i < data_size; i++) {
 		SPI.transfer(data[i]); // write values
 	}
+	delayMicroseconds(5);
+	digitalWrite(_ss, HIGH);
+	SPI.endTransaction();
+}
+
+void DW1000Class::writeBytesOpt(byte cmd, uint16_t offset, byte data[], uint16_t data_size) {
+	byte header[3];
+	uint8_t  headerLen = 1;
+	uint16_t  i = 0;
+	
+	// TODO proper error handling: address out of bounds
+	// build SPI header
+	if(offset == NO_SUB) {
+		header[0] = WRITE | cmd;
+	} else {
+		header[0] = WRITE_SUB | cmd;
+		if(offset < 128) {
+			header[1] = (byte)offset;
+			headerLen++;
+		} else {
+			header[1] = RW_SUB_EXT | (byte)offset;
+			header[2] = (byte)(offset >> 7);
+			headerLen += 2;
+		}
+	}
+	SPI.beginTransaction(*_currentSPI);
+	digitalWrite(_ss, LOW);
+	SPI.transfer(header, headerLen);
+	SPI.transfer(data, data_size);
 	delayMicroseconds(5);
 	digitalWrite(_ss, HIGH);
 	SPI.endTransaction();

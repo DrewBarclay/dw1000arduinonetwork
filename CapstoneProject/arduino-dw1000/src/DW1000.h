@@ -517,7 +517,8 @@ public:
 	static void readBytesOTP(uint16_t address, byte data[]);
 	static void writeByte(byte cmd, uint16_t offset, byte data);
 	static void writeBytes(byte cmd, uint16_t offset, byte data[], uint16_t n);
-	
+	static void writeBytesOpt(byte cmd, uint16_t offset, byte data[], uint16_t n);
+
 	/* writing numeric values to bytes. */
 	static void writeValueToBytes(byte data[], int32_t val, uint16_t n);
 	
