@@ -58,7 +58,16 @@ byte expectedIDIdx = 0;
 
 // delay time before sending a message, should be at least 3ms (3000us)
 const unsigned int DELAY_TIME_US = 2048 + 1000 + NUM_DEVICES * 83 + 200; //should be equal to preamble symbols (each take ~1us to transmit) + 1000 (base time to communicate and start transmitting and calculating a delay timestamp) + 4.5*bytes of data to send. add a little fudge room too. (experimentally found.) in microseconds.
-const unsigned long DELAY_UNTIL_ASSUMED_LOST = 9000 + 1500 + DELAY_TIME_US + 2000; //estimated max parse time + transmit time + delay time on transmit + fudge factor
+const unsigned long DELAY_UNTIL_ASSUMED_LOST = 4300 + 1480 + DELAY_TIME_US + 2000; //estimated max parse time + transmit time + delay time on transmit + fudge factor, the extra factor of 1200us per extra devices is added later
+/* receive/transmit times and # of devices
+TX   RX   #
+1480 4300 2
+1570 5300 3
+1670 6300 4
+1760 7300 5
+1850 8400 6
+*/
+
 
 volatile bool received; //Set when we are interrupted because we have received a transmission
 volatile bool sent = false; //Set when we successfully send
@@ -97,7 +106,7 @@ void setup() {
   curNumDevices = 0;
   timerStart = millis();
 
-  Serial.begin(115200);
+  Serial.begin(1000000);
   delay(1000);
   // initialize the driver
   DW1000.begin(PIN_IRQ, PIN_RST);
@@ -199,7 +208,9 @@ void parseReceived() {
   }
   if (idx == -1) { //If we haven't seen this device before...
     lastReceivedWasNew = true;
-    Serial.print("New device found. ID: "); Serial.println(fromID);
+    String output = "New device found. ID: ";
+    output += fromID;
+    Serial.println(fromID);
     if (curNumDevices == NUM_DEVICES) {
       Serial.println("Max # of devices exceeded. Returning early from receive.");
       return;
@@ -282,7 +293,7 @@ void parseReceived() {
 }
 
 void doTransmit() {
-  unsigned int transmitTimer = (unsigned int)millis();
+  unsigned long transmitTimer = micros();
 
   data[0] = OUR_ID;
 
@@ -323,7 +334,7 @@ void doTransmit() {
     devices[i].timeSent = timeSent;
   }
 
-  Serial.print("Transmit time: "); Serial.println((unsigned int)(millis()) - transmitTimer);
+  Serial.print("Transmit time: "); Serial.println(micros() - transmitTimer);
 }
 
 void debug() {
@@ -340,7 +351,7 @@ void debug() {
 
 void checkTxOrderTime() {
   //Check timer and update if the last device was too slow
-  if (micros() - txTimerStart > DELAY_UNTIL_ASSUMED_LOST + curNumDevices * 2200) {
+  if (micros() - txTimerStart > DELAY_UNTIL_ASSUMED_LOST + curNumDevices * 1300) {
     expectedIDIdx = (expectedIDIdx + 1) % TX_ORDER_SIZE();
     txTimerStart = micros();
     tookTurn = false;
@@ -419,7 +430,9 @@ void loop() {
         received = false; //If a signal is received before we finished the doTransmit function then there will be issues as we overwrote the received data
         //Timer is not set here; if successfully sent, it is set in the if (sent) block above. Otherwise, we will move our expected ID up when the round expires.
         tookTurn = true;
-        Serial.print("!id "); Serial.println(OUR_ID);
+        String output = "!id ";
+        output += OUR_ID;
+        Serial.println(output);
       }
       break;
   }
