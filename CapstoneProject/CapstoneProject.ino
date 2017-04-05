@@ -10,6 +10,7 @@ class Device  {
   public:
     byte id = 0;
     byte transmissionCount;
+    byte missedTransmissions = 0;
     DW1000Time timeDevicePrevSent;
     DW1000Time timePrevReceived;
     DW1000Time timeSent;
@@ -44,9 +45,14 @@ const uint8_t PIN_SS = SS; // spi select pin
 #define LEN_DATA 256
 byte data[LEN_DATA];
 
+//just an output buffer
+String output;
+
 //id for this device
-const byte OUR_ID = 7;
+const byte OUR_ID = 4;
 const byte DUMMY_ID = 255; //for use with ending a round
+#define WE_ARE_ANCHOR (OUR_ID < 5)
+#define WE_ARE_TAG (OUR_ID >= 5)
 
 unsigned long timerStart; //from millis() for use with various code needing a reference start time
 unsigned long txTimerStart; //same deal for transmission round orders
@@ -88,7 +94,12 @@ void Device::computeRange() {
   DW1000Time reply2 = (timeDeviceSent - timeDeviceReceived).wrap();
 
   DW1000Time tof = (round1 * round2 - reply1 * reply2) / (round1 + round2 + reply1 + reply2);
-  this->lastComputedRange = tof.getAsMeters();
+  float range = tof.getAsMeters();
+  if (range < 1000 || range >= -10) {
+    this->lastComputedRange = range;
+  } else {
+    this->lastComputedRange = 0;
+  }
 }
 
 unsigned long max_ul(unsigned long a, unsigned long b) {
@@ -120,7 +131,7 @@ void setup() {
   DW1000.enableMode(DW1000.MODE_LONGDATA_RANGE_ACCURACY);
   //const byte mode[] = {DW1000.TRX_RATE_850KBPS, DW1000.TX_PULSE_FREQ_16MHZ, DW1000.TX_PREAMBLE_LEN_512};
   //DW1000.enableMode(mode);
-  if (OUR_ID >= 5) { //tag
+  if (WE_ARE_TAG) { //tag
     DW1000.commitConfiguration(16470);
   } else { //anchor
     DW1000.commitConfiguration(16500);
@@ -134,6 +145,10 @@ void setup() {
   DW1000.attachReceiveFailedHandler(handleReceiveFailed);
 
   receiver(); //start receiving
+
+  //!range 1 2 324.35
+  //this is 17 bytes
+  output.reserve((NUM_DEVICES + 1) * 17); //Allocate memory for the longest possible message that's going to be sent
 }
 
 void handleError() {
@@ -208,9 +223,10 @@ void parseReceived() {
   }
   if (idx == -1) { //If we haven't seen this device before...
     lastReceivedWasNew = true;
-    String output = "New device found. ID: ";
+    output = "";
+    output += "New device found. ID: ";
     output += fromID;
-    Serial.println(fromID);
+    Serial.println(output);
     if (curNumDevices == NUM_DEVICES) {
       Serial.println("Max # of devices exceeded. Returning early from receive.");
       return;
@@ -222,6 +238,7 @@ void parseReceived() {
     devices[curNumDevices].id = fromID;
     devices[curNumDevices].timeDeviceSent = timeDeviceSent;
     devices[curNumDevices].transmissionCount = 1;
+    devices[curNumDevices].missedTransmissions = 0;
     idx = curNumDevices;
     curNumDevices++;
   } else {
@@ -229,10 +246,12 @@ void parseReceived() {
   }
 
   devices[idx].hasReplied = true;
+  devices[idx].missedTransmissions = 0;
 
   //Now, a list of device-specific stuff
+  output = "";
   for (int i = 6; i < len;) {
-    String output = "";
+
 
     //First byte, device ID
     byte deviceID = data[i];
@@ -283,13 +302,17 @@ void parseReceived() {
     }
 
     //Serial.println(range);
-    output += "!range "; output += fromID; output += " "; output += deviceID; output += " "; output += range; output += "\n";
-    //Serial.print("!range "); Serial.print(fromID); Serial.print(" "); Serial.print(deviceID); Serial.print(" "); Serial.println(range);
-
-    Serial.print(output);
+    if (WE_ARE_TAG) {
+      output += "!range "; output += fromID; output += " "; output += deviceID; output += " "; output += range; output += "\n";
+      //Serial.print("!range "); Serial.print(fromID); Serial.print(" "); Serial.print(deviceID); Serial.print(" "); Serial.println(range);
+    }
   }
 
-  Serial.print("Receive time: "); Serial.println(micros() - parseTimer);
+  if (WE_ARE_TAG) {
+    Serial.println(output);
+  }
+
+  //Serial.print("Receive time: "); Serial.println(micros() - parseTimer);
 }
 
 void doTransmit() {
@@ -334,7 +357,7 @@ void doTransmit() {
     devices[i].timeSent = timeSent;
   }
 
-  Serial.print("Transmit time: "); Serial.println(micros() - transmitTimer);
+  //Serial.print("Transmit time: "); Serial.println(micros() - transmitTimer);
 }
 
 void debug() {
@@ -352,7 +375,43 @@ void debug() {
 void checkTxOrderTime() {
   //Check timer and update if the last device was too slow
   if (micros() - txTimerStart > DELAY_UNTIL_ASSUMED_LOST + curNumDevices * 1300) {
-    expectedIDIdx = (expectedIDIdx + 1) % TX_ORDER_SIZE();
+    //Device was too slow! Note this.
+    int idx = -1;
+    for (int i = 0; i < curNumDevices; i++) {
+      if (devices[i].id == txOrder[expectedIDIdx]) {
+        idx = i;
+      }
+    }
+
+    bool removed = false;
+    if (idx != -1) {
+      devices[idx].missedTransmissions++;
+      if (devices[idx].missedTransmissions > 5) {
+        removed = true;
+
+        //Drop it!
+        output = "";
+        output += "!remove ";
+        output += txOrder[expectedIDIdx];
+        Serial.println(output);
+
+        //First from the devices list...
+        devices[idx] = devices[curNumDevices - 1];
+
+        //And from txOrder...
+        //Move everything down by 1
+        memmove(txOrder + expectedIDIdx, txOrder + expectedIDIdx + 1, sizeof(byte) * (TX_ORDER_SIZE() - expectedIDIdx - 1));
+
+        curNumDevices--;
+      }
+    }
+
+    if (!removed) {
+      expectedIDIdx = (expectedIDIdx + 1) % TX_ORDER_SIZE();
+    } else {
+      //No need to change expectedIDIdx, as we've essentially added one to it here by removing it.
+    }
+
     txTimerStart = micros();
     tookTurn = false;
   }
@@ -430,9 +489,11 @@ void loop() {
         received = false; //If a signal is received before we finished the doTransmit function then there will be issues as we overwrote the received data
         //Timer is not set here; if successfully sent, it is set in the if (sent) block above. Otherwise, we will move our expected ID up when the round expires.
         tookTurn = true;
-        String output = "!id ";
-        output += OUR_ID;
-        Serial.println(output);
+        if (WE_ARE_TAG) {
+          String output = "!id ";
+          output += OUR_ID;
+          Serial.println(output);
+        }
       }
       break;
   }
