@@ -49,7 +49,7 @@ byte data[LEN_DATA];
 String output;
 
 //id for this device
-const byte OUR_ID = 4;
+const byte OUR_ID = 7;
 const byte DUMMY_ID = 255; //for use with ending a round
 #define WE_ARE_ANCHOR (OUR_ID < 5)
 #define WE_ARE_TAG (OUR_ID >= 5)
@@ -309,7 +309,7 @@ void parseReceived() {
   }
 
   if (WE_ARE_TAG) {
-    Serial.println(output);
+    Serial.print(output);
   }
 
   //Serial.print("Receive time: "); Serial.println(micros() - parseTimer);
