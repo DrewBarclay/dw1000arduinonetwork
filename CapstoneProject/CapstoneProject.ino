@@ -49,7 +49,7 @@ byte data[LEN_DATA];
 String output;
 
 //id for this device
-const byte OUR_ID = 7;
+const byte OUR_ID = 6;
 const byte DUMMY_ID = 255; //for use with ending a round
 #define WE_ARE_ANCHOR (OUR_ID < 5)
 #define WE_ARE_TAG (OUR_ID >= 5)
@@ -251,8 +251,6 @@ void parseReceived() {
   //Now, a list of device-specific stuff
   output = "";
   for (int i = 6; i < len;) {
-
-
     //First byte, device ID
     byte deviceID = data[i];
     i++;
